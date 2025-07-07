@@ -1,0 +1,62 @@
+CREATE VIEW gold.report_products AS
+WITH product_base_query AS(
+-- Base query: get core columns
+	SELECT
+		p.product_key,
+		p.product_name,
+		p.category,
+		p.subcategory,
+		p.cost,
+		f.order_number,
+		f.quantity,
+		f.customer_key,
+		f.sales_amount,
+		f.order_date
+		FROM gold.fact_sales f
+		LEFT JOIN gold.dim_products p
+		ON f.product_key = p.product_key)
+
+, product_aggregation AS (
+-- Product Aggregations: Summarizes key metrics at the product level --
+	SELECT
+		product_name,
+		category,
+		subcategory,
+		cost,
+		COUNT(DISTINCT order_number) AS total_order,
+		SUM(sales_amount) AS total_sales,
+		SUM(quantity) AS quantity_sold,
+		COUNT(DISTINCT customer_key) AS total_customers,
+		MAX(order_date) AS last_order_date,
+		DATEDIFF(month, MIN(order_date),MAX(order_date)) AS lifespan
+		FROM product_base_query
+		GROUP BY product_name, category, subcategory, cost)
+-- Final Query -- 
+SELECT
+product_name,
+category,
+subcategory,
+total_customers,
+cost,
+total_sales,
+CASE 
+		WHEN total_sales < 150000 THEN 'Low-performers'
+		WHEN total_sales BETWEEN 150000 AND  250000 THEN 'Medium-performers'
+		ELSE 'High-performers'
+END AS revenue_group,
+last_order_date,
+DATEDIFF(month,last_order_date,GETDATE()) AS recency,
+total_order,
+-- Average Order Revenue --
+CASE 
+	WHEN total_order = 0 THEN 0
+	ELSE total_sales/total_order 
+END AS avg_order_revenue,
+quantity_sold,
+lifespan,
+-- Average Monthly Revenue --
+CASE 
+	WHEN lifespan = 0 THEN 0
+	ELSE total_sales/lifespan 
+END AS avg_monthly_revenue
+FROM product_aggregation
